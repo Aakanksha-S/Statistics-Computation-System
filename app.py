@@ -1,31 +1,43 @@
-import sys
-import os
+import concurrent.futures
 
-from flask import Flask, json, request, url_for,jsonify
-from flask_api import FlaskAPI, status, exceptions
+from flask import request
+from flask_api import FlaskAPI
 
-from getStatistics import *
-from postTransactions import *
- 
-api = FlaskAPI(__name__)
- 
-transactions = []
+from get_statistics import get_statistics
+from transactions import execute_transaction
 
-def parse(jsonStr):
-	try:
-		json.parse(jsonStr)
-	except:
-		return "", status.HTTP_422_BAD_REQUEST
+app = FlaskAPI(__name__)
+
+transactions_store = []
 
 
-@api.route('/statistics', methods=['GET'])
-def get_statistics():
-	return get_statistics_handler(request,transactions)
+@app.route("/statistics", methods=["GET"])
+def get_statistics_handler():
+    """
+    Method: GET
+    Payload : No Payload
+    Response : Statistics of transactions with timestamp within the threshold (60s)
+    """
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(get_statistics, transactions_store)
+        return future.result()
 
 
-@api.route("/transactions",methods=['POST','DELETE'])
-def post_transactions():
-	return post_transactions_handler(request,transactions)
-	
-if __name__ == '__main__':
-    api.run()
+@app.route("/transactions", methods=["POST", "DELETE"])
+def transactions_handler():
+    """
+    Method: POST/DELETE
+    Payload : json obj containing Amount, Timestamp
+    Response : Empty body
+    """
+    method = request.method
+    request_body = request.data
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(
+            execute_transaction, transactions_store, method, request_body
+        )
+        return future.result()
+
+
+if __name__ == "__main__":
+    app.run(threaded=True)
